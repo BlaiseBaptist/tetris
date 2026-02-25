@@ -1,47 +1,29 @@
-use iced;
-use iced::widget::{column, container, row, text, Grid};
-use iced::{Element, Fill};
+mod board;
+use iced::widget::container;
+use iced::{time, Element, Fill, Subscription};
+use std::time::Duration;
 #[derive(Debug, Clone)]
-enum Message {}
-const ROWS: usize = 20;
-const COLS: usize = 10;
-#[derive(Debug)]
-struct State {
-    grid: [[Tile; ROWS]; COLS],
+enum Message {
+    Tick,
 }
-
-impl std::default::Default for State {
-    fn default() -> Self {
-        State {
-            grid: [[Tile::default(); ROWS]; COLS],
+pub fn main() -> iced::Result {
+    iced::application(board::State::default, update, view)
+        .subscription(timer)
+        .run()
+}
+fn timer(_state: &board::State) -> Subscription<Message> {
+    time::every(Duration::from_secs_f64(0.05)).map(|_| Message::Tick)
+}
+fn update(state: &mut board::State, message: Message) {
+    match message {
+        Message::Tick => {
+            state.tick();
         }
     }
 }
-#[derive(Debug, Default, Copy, Clone)]
-struct Tile {
-    has_tile: bool,
-}
-impl Tile {
-    pub fn view(&self) -> Element<Message> {
-        todo!()
-    }
-}
 
-pub fn main() -> iced::Result {
-    iced::run(update, view)
-}
-fn update(state: &mut State, message: Message) {
-    match message {}
-}
-
-fn view(state: &State) -> Element<'_, Message> {
-    let total_elements = ROWS * COLS;
-    container(
-        Grid::from_iter(state.grid.iter().map(|i| i.view()))
-            .columns(10)
-            .height(Fill),
-    )
-    .max_width(1000)
-    .max_height(2000)
-    .into()
+fn view(state: &board::State) -> Element<'_, Message> {
+    container(container(state.view()).max_width(500))
+        .center(Fill)
+        .into()
 }
