@@ -84,7 +84,7 @@ fn update(state: &mut board::State, message: Message) {
 }
 
 fn view(state: &board::State) -> Element<'_, Message> {
-    container(container(state.view()).max_width(500))
+    container(container(state.view()).max_width(300))
         .center(Fill)
         .into()
 }
