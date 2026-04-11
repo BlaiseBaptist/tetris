@@ -103,12 +103,11 @@ impl State {
         }
         self.time += 1;
         // Pieces fall once every 50 ticks (500 ms at 10 ms/tick)
-        if self.time % 50 == 0 {
-            if self.move_active(1, 0) != MoveResult::Moved {
+        if self.time.is_multiple_of(50)
+            && self.move_active(1, 0) != MoveResult::Moved {
                 self.clear_lines();
                 self.spawn_piece();
             }
-        }
     }
 
     pub fn take_action(&mut self, action: super::Action) {
