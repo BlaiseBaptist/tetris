@@ -1,6 +1,5 @@
 mod board;
 use iced::keyboard;
-use iced::widget::container;
 use iced::{time, Element, Fill, Subscription};
 use std::time::Duration;
 
@@ -47,21 +46,11 @@ fn player_input() -> Subscription<Message> {
                     _ => None,
                 },
                 keyboard::Key::Named(named) => match named {
-                    keyboard::key::Named::ArrowLeft => {
-                        Some(Message::TakeAction(Action::Left))
-                    }
-                    keyboard::key::Named::ArrowRight => {
-                        Some(Message::TakeAction(Action::Right))
-                    }
-                    keyboard::key::Named::ArrowUp => {
-                        Some(Message::TakeAction(Action::ClockWise))
-                    }
-                    keyboard::key::Named::ArrowDown => {
-                        Some(Message::TakeAction(Action::SoftDrop))
-                    }
-                    keyboard::key::Named::Space => {
-                        Some(Message::TakeAction(Action::FinishFall))
-                    }
+                    keyboard::key::Named::ArrowLeft => Some(Message::TakeAction(Action::Left)),
+                    keyboard::key::Named::ArrowRight => Some(Message::TakeAction(Action::Right)),
+                    keyboard::key::Named::ArrowUp => Some(Message::TakeAction(Action::ClockWise)),
+                    keyboard::key::Named::ArrowDown => Some(Message::TakeAction(Action::SoftDrop)),
+                    keyboard::key::Named::Space => Some(Message::TakeAction(Action::FinishFall)),
                     _ => None,
                 },
                 _ => None,
@@ -74,17 +63,14 @@ fn player_input() -> Subscription<Message> {
 
 fn update(state: &mut board::State, message: Message) {
     match message {
-        Message::Tick => {
-            state.tick();
-        }
-        Message::TakeAction(action) => {
-            state.take_action(action);
-        }
+        Message::Tick => state.tick(),
+        Message::TakeAction(action) => state.take_action(action),
     }
 }
 
 fn view(state: &board::State) -> Element<'_, Message> {
-    container(container(state.view()).max_width(300))
-        .center(Fill)
+    iced::widget::container(state.view())
+        .width(Fill)
+        .height(Fill)
         .into()
 }

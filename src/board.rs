@@ -1,6 +1,7 @@
 use super::Message;
-use iced::widget::{column, container, text, Grid};
-use iced::{Border, Color, Element, Theme};
+use iced::widget::canvas;
+use iced::widget::{column, text, Canvas};
+use iced::{Color, Element, Fill, Point, Rectangle, Size};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
@@ -34,19 +35,24 @@ impl Default for State {
 
 impl State {
     pub fn view(&self) -> Element<'_, Message> {
-        let grid_widget = Grid::from_iter(self.grid.iter().map(|t| t.view())).columns(COLS);
+        let canvas_widget = Canvas::new(BoardCanvas(self))
+            .width(Fill)
+            .height(Fill);
+
         if !self.playing {
             column![
                 text("GAME OVER").size(30),
                 text(format!("Score: {}", self.score)).size(20),
-                grid_widget,
+                canvas_widget,
             ]
+            .height(Fill)
             .into()
         } else {
             column![
                 text(format!("Score: {}", self.score)).size(20),
-                grid_widget,
+                canvas_widget,
             ]
+            .height(Fill)
             .into()
         }
     }
@@ -96,7 +102,7 @@ impl State {
             return;
         }
         self.time += 1;
-        // Pieces fall once every 50 ticks (500ms at 10ms/tick)
+        // Pieces fall once every 50 ticks (500 ms at 10 ms/tick)
         if self.time % 50 == 0 {
             if self.move_active(1, 0) != MoveResult::Moved {
                 self.clear_lines();
@@ -165,7 +171,6 @@ impl State {
     }
 
     fn spin(&mut self, clockwise: bool) {
-        // O piece looks the same in all rotations
         if matches!(self.active_piece.piece_type, Tetrominoe::O) {
             return;
         }
@@ -177,8 +182,6 @@ impl State {
         };
 
         let old_places = self.active_piece.places();
-
-        // Try the rotation with several wall-kick offsets
         let kicks: &[(isize, isize)] = &[(0, 0), (0, -1), (0, 1), (0, -2), (0, 2), (-1, 0)];
 
         for &(kr, kc) in kicks {
@@ -206,7 +209,6 @@ impl State {
                 }
             }
         }
-        // All kick positions blocked — rotation silently fails
     }
 
     fn clear_lines(&mut self) {
@@ -218,18 +220,15 @@ impl State {
                 .iter()
                 .all(|t| t.piece_type.is_some())
             {
-                // Shift every row above this one down by one
                 for r in (1..=row).rev() {
                     for c in 0..COLS {
                         self.grid[r * COLS + c] = self.grid[(r - 1) * COLS + c];
                     }
                 }
-                // Clear the newly empty top row
                 for c in 0..COLS {
                     self.grid[c] = Tile::default();
                 }
                 rows_cleared += 1;
-                // Re-check the same row index (now holds content from above)
             } else {
                 if row == 0 {
                     break;
@@ -246,6 +245,67 @@ impl State {
         };
     }
 }
+
+// ---------------------------------------------------------------------------
+// Canvas rendering
+// ---------------------------------------------------------------------------
+
+struct BoardCanvas<'a>(&'a State);
+
+impl<'a> canvas::Program<Message> for BoardCanvas<'a> {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<canvas::Geometry<iced::Renderer>> {
+        let state = self.0;
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        // Compute the largest square tile that fits the canvas
+        let tile = (bounds.width / COLS as f32).min(bounds.height / ROWS as f32);
+        let board_w = tile * COLS as f32;
+        let board_h = tile * ROWS as f32;
+        // Centre the board in the canvas
+        let ox = (bounds.width - board_w) / 2.0;
+        let oy = (bounds.height - board_h) / 2.0;
+
+        // Board background
+        frame.fill_rectangle(
+            Point::new(ox, oy),
+            Size::new(board_w, board_h),
+            Color::from_rgb(0.08, 0.08, 0.08),
+        );
+
+        let gap = (tile * 0.04).max(1.0);
+
+        for row in 0..ROWS {
+            for col in 0..COLS {
+                let cell = &state.grid[row * COLS + col];
+                let x = ox + col as f32 * tile + gap;
+                let y = oy + row as f32 * tile + gap;
+                let cell_size = tile - 2.0 * gap;
+
+                let color = match cell.piece_type {
+                    Some(t) => t.color(),
+                    None => Color::from_rgb(0.14, 0.14, 0.14),
+                };
+
+                frame.fill_rectangle(Point::new(x, y), Size::new(cell_size, cell_size), color);
+            }
+        }
+
+        vec![frame.into_geometry()]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Core types
+// ---------------------------------------------------------------------------
 
 #[derive(PartialEq, Debug)]
 enum MoveResult {
@@ -305,7 +365,7 @@ impl Piece {
     }
 }
 
-/// Clockwise rotation: (r, c) -> (c, -r), applied `rotation` times.
+/// Clockwise rotation transform: (r, c) → (c, −r), applied `rotation` times.
 fn apply_rotation(offsets: [(isize, isize); 4], rotation: u8) -> [(isize, isize); 4] {
     offsets.map(|(r, c)| match rotation % 4 {
         0 => (r, c),
@@ -328,35 +388,27 @@ enum Tetrominoe {
 }
 
 impl Tetrominoe {
-    /// Cell offsets from the pivot in spawn orientation (rotation 0).
     fn base_offsets(self) -> [(isize, isize); 4] {
         match self {
-            // Horizontal bar — pivot at second cell
             Tetrominoe::I => [(0, -1), (0, 0), (0, 1), (0, 2)],
-            // 2×2 square — pivot at top-left
             Tetrominoe::O => [(0, 0), (0, 1), (1, 0), (1, 1)],
-            // T-shape — pivot at center of crossbar
             Tetrominoe::T => [(-1, 0), (0, -1), (0, 0), (0, 1)],
-            // S-shape
             Tetrominoe::S => [(-1, 0), (-1, 1), (0, -1), (0, 0)],
-            // Z-shape
             Tetrominoe::Z => [(-1, -1), (-1, 0), (0, 0), (0, 1)],
-            // J-shape (top-left corner)
             Tetrominoe::J => [(-1, -1), (0, -1), (0, 0), (0, 1)],
-            // L-shape (top-right corner)
             Tetrominoe::L => [(-1, 1), (0, -1), (0, 0), (0, 1)],
         }
     }
 
     fn color(self) -> Color {
         match self {
-            Tetrominoe::I => Color::from_rgb(0.0, 0.9, 0.9),  // cyan
-            Tetrominoe::O => Color::from_rgb(0.9, 0.9, 0.0),  // yellow
-            Tetrominoe::T => Color::from_rgb(0.6, 0.0, 0.8),  // purple
-            Tetrominoe::S => Color::from_rgb(0.0, 0.8, 0.0),  // green
-            Tetrominoe::Z => Color::from_rgb(0.9, 0.0, 0.0),  // red
-            Tetrominoe::J => Color::from_rgb(0.0, 0.3, 0.9),  // blue
-            Tetrominoe::L => Color::from_rgb(0.9, 0.5, 0.0),  // orange
+            Tetrominoe::I => Color::from_rgb(0.0, 0.9, 0.9),
+            Tetrominoe::O => Color::from_rgb(0.9, 0.9, 0.0),
+            Tetrominoe::T => Color::from_rgb(0.6, 0.0, 0.8),
+            Tetrominoe::S => Color::from_rgb(0.0, 0.8, 0.0),
+            Tetrominoe::Z => Color::from_rgb(0.9, 0.0, 0.0),
+            Tetrominoe::J => Color::from_rgb(0.0, 0.3, 0.9),
+            Tetrominoe::L => Color::from_rgb(0.9, 0.5, 0.0),
         }
     }
 }
@@ -364,20 +416,4 @@ impl Tetrominoe {
 #[derive(Debug, Default, Copy, Clone)]
 struct Tile {
     piece_type: Option<Tetrominoe>,
-}
-
-impl Tile {
-    pub fn view(&self) -> Element<'_, Message> {
-        container("")
-            .style(|theme: &Theme| {
-                let bg = match self.piece_type {
-                    Some(t) => t.color(),
-                    None => theme.palette().background,
-                };
-                container::Style::default()
-                    .background(bg)
-                    .border(Border::default().color(theme.palette().text).width(1))
-            })
-            .into()
-    }
 }
